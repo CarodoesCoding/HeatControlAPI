@@ -1,0 +1,98 @@
+services:
+  api:
+    build: ./api
+    command: sh -c "python3 sql.py && uvicorn main:app --host 0.0.0.0 --port 8000"
+    container_name: api
+    ports:
+      - ${API_PORT}:8000
+    volumes:
+      - ./data:/data
+    env_file:
+      - ./.env
+    depends_on:
+      - sql_db
+      - influxdb
+    networks:
+      - heating-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    ports:
+      - ${DASHBOARD_PORT}:8501
+    env_file:
+      - ./.env
+    depends_on:
+      - api
+    networks:
+      - heating-net
+    environment:
+      - API_URL=http://api:8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+
+  sql_db:
+    image: mysql:8.0
+    container_name: sql_db
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DB}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    ports:
+      - ${SQL_PORT}:3306
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - heating-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - ${INFLUX_PORT}:8086
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_ADMIN_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_ADMIN_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_RETENTION: 0
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+      
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks:
+      - heating-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+
+networks:
+  heating-net:
+
+volumes:
+  mysql_data:
+  influxdb_data:
